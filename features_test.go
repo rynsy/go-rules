@@ -52,6 +52,14 @@ func TestSkipNow(t *testing.T) { t.SkipNow(); t.Fatal("x") }
 
 func notATest(t *testing.T) { t.Fatal("x") }
 
+func TestSkipsInSetup(t *testing.T) { setup(t); t.Fatal("x") }
+
+func setup(t *testing.T) {
+	if os.Getenv("DATABASE_URL") == "" {
+		t.Skip("no database")
+	}
+}
+
 func TestBench(b *testing.B) { b.Fatal("x") }
 `
 
@@ -130,6 +138,7 @@ func TestProofProblems(t *testing.T) {
 		"internal/api:TestRecursiveHelper": "cannot fail",
 		"internal/api:TestSkips":           "can skip itself",
 		"internal/api:TestSkipNow":         "can skip itself",
+		"internal/api:TestSkipsInSetup":    "through a helper",
 		"internal/api:TestTagged":          "build constraint (integration)",
 		"internal/api:TestMissing":         "no such test function",
 		"internal/api:notATest":            "not a proof of the form",
