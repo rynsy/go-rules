@@ -30,9 +30,10 @@ linters:
       require-explanation: true
       require-specific: true
   exclusions:
+    generated: disable
     presets: [comments]
     rules:
-      - path: _test\.go
+      - path: _test\.go$
         linters: [forbidigo, gocognit, gocyclo, gosec]
       - path: ^cmd/[^/]+/main\.go$
         linters: [forbidigo]
@@ -41,3 +42,5 @@ formatters:
   enable:
     - gofmt
     - goimports
+  exclusions:
+    generated: disable

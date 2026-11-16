@@ -33,7 +33,12 @@ func TestSubtests(t *testing.T) {
 	t.Run("a", func(t *testing.T) { t.Error("x") })
 }
 
-func TestTestify(t *testing.T) { require.True(t, true) }
+func TestLogsAnError(t *testing.T) { t.Log(errors.New("x").Error()) }
+
+func TestLocalAssert(t *testing.T) {
+	assert := struct{ Equal func(...any) }{}
+	assert.Equal(t, 1, 2)
+}
 
 func TestNothing(t *testing.T) { _ = 1 }
 
@@ -63,6 +68,17 @@ func setup(t *testing.T) {
 func TestBench(b *testing.B) { b.Fatal("x") }
 `
 
+const testifyTests = `package api
+
+import (
+	"testing"
+
+	must "github.com/stretchr/testify/require"
+)
+
+func TestTestify(t *testing.T) { must.True(t, true) }
+`
+
 const taggedTests = `//go:build integration
 
 package api
@@ -87,7 +103,85 @@ func repo(t *testing.T, features string) string {
 	write("internal/api/openapi.json", openapiDoc)
 	write("internal/api/api_test.go", apiTests)
 	write("internal/api/tagged_test.go", taggedTests)
+	write("internal/api/testify_test.go", testifyTests)
 	write("features.json", features)
+	return root
+}
+
+const runnableTests = `package api
+
+import (
+	"os"
+	"testing"
+)
+
+func TestHealth(t *testing.T) {
+	if os.Getenv("FX_BREAK") != "" {
+		t.Fatal("broken")
+	}
+}
+
+func TestSubtests(t *testing.T) {
+	t.Run("a b", func(t *testing.T) {
+		if os.Getenv("FX_BREAK") != "" {
+			t.Error("broken")
+		}
+	})
+}
+
+func TestFails(t *testing.T) {
+	if os.Getenv("FX_PASS") == "" {
+		t.Fatal("fails")
+	}
+}
+`
+
+const exitingMain = `package other
+
+import (
+	"os"
+	"testing"
+)
+
+func TestMain(m *testing.M) { os.Exit(0) }
+
+func TestHidden(t *testing.T) {
+	if os.Getenv("FX_BREAK") != "" {
+		t.Fatal("x")
+	}
+}
+`
+
+const brokenTests = `package broken
+
+import "testing"
+
+func TestBroken(t *testing.T) {
+	if undefined {
+		t.Fatal("x")
+	}
+}
+`
+
+func runnable(t *testing.T, openapi, features string) string {
+	t.Helper()
+	root := t.TempDir()
+	for path, body := range map[string]string{
+		"go.mod":                      "module example.com/fx\n\ngo 1.27\n",
+		"internal/api/openapi.json":   openapi,
+		"internal/api/api_test.go":    runnableTests,
+		"internal/other/main_test.go": exitingMain,
+		"internal/broken/b_test.go":   brokenTests,
+		"features.json":               features,
+	} {
+		full := filepath.Join(root, path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	return root
 }
 
@@ -101,9 +195,9 @@ func problems(t *testing.T, root string) []string {
 }
 
 func TestFeatureMapHolds(t *testing.T) {
-	root := repo(t, `[
-	  {"name": "Health", "operations": ["health"], "provenBy": ["internal/api:TestHealth", "internal/api:TestSubtests/a"]},
-	  {"name": "Items", "operations": ["createItem"], "provenBy": ["internal/api:TestViaHelper", "internal/api:TestTestify"]}
+	root := runnable(t, openapiDoc, `[
+	  {"name": "Health", "operations": ["health"], "provenBy": ["internal/api:TestHealth", "internal/api:TestSubtests/a b"]},
+	  {"name": "Items", "operations": ["createItem"], "provenBy": ["internal/api:TestHealth"]}
 	]`)
 	got := problems(t, root)
 	if len(got) != 1 || !strings.Contains(got[0], "PUT /items has no operationId") {
@@ -111,8 +205,36 @@ func TestFeatureMapHolds(t *testing.T) {
 	}
 }
 
+func TestProofsMustPassWhenRun(t *testing.T) {
+	root := runnable(t, openapiDoc, `[
+	  {"name": "Health", "operations": ["health", "createItem"], "provenBy": [
+	    "internal/api:TestFails", "internal/api:TestSubtests/no such", "internal/other:TestHidden", "internal/broken:TestBroken"
+	  ]}
+	]`)
+	got := strings.Join(problems(t, root), "\n")
+	for _, want := range []string{
+		"internal/api:TestFails: did not pass when run",
+		"internal/api:TestSubtests/no such: did not pass when run",
+		"internal/other:TestHidden: did not pass when run",
+		"internal/broken:TestBroken: did not pass when run (`go test -run` in internal/broken): it did not build",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+}
+
+func TestDuplicateOperationIDs(t *testing.T) {
+	root := runnable(t, `{"paths": {"/a": {"get": {"operationId": "op"}}, "/b": {"post": {"operationId": "op"}}}}`,
+		`[{"name": "A", "operations": ["op"], "provenBy": ["internal/api:TestHealth"]}]`)
+	got := problems(t, root)
+	if len(got) != 1 || got[0] != "operationId op is used by both GET /a and POST /b" {
+		t.Errorf("got %q", got)
+	}
+}
+
 func TestFeatureMapGaps(t *testing.T) {
-	root := repo(t, `[
+	root := runnable(t, openapiDoc, `[
 	  {"name": "Health", "operations": ["health", "gone"], "provenBy": []}
 	]`)
 	got := problems(t, root)
@@ -141,6 +263,8 @@ func TestProofProblems(t *testing.T) {
 		"internal/api:TestSkipsInSetup":    "through a helper",
 		"internal/api:TestTagged":          "build constraint (integration)",
 		"internal/api:TestMissing":         "no such test function",
+		"internal/api:TestLogsAnError":     "cannot fail",
+		"internal/api:TestLocalAssert":     "cannot fail",
 		"internal/api:notATest":            "not a proof of the form",
 		"internal/api:TestBench":           "no such test function",
 		"internal/none:TestHealth":         "no _test.go files",
