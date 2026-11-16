@@ -7,7 +7,7 @@ The idea: whenever an agent (or a person) gets something wrong, the correction b
 ## Use it
 
 ```sh
-go get -tool github.com/rynsy/go-rules/cmd/rynsy-rules@v0.1.0
+go get -tool github.com/rynsy/go-rules/cmd/rynsy-rules@v0.2.0
 echo .golangci.rynsy.yml >> .gitignore
 ```
 
@@ -48,7 +48,7 @@ The repo keeps no `.golangci.yml` of its own. A one-off exception is `//nolint:<
 - `rynsy-rules features [-openapi internal/api/openapi.json] [-features features.json]`: every OpenAPI operation has an `operationId` and belongs to a feature; every feature names at least one proving test as `<package dir>:<TestName>` (a subtest may follow `/`). Each such test:
   - exists in a `_test.go` file of that directory with a `*testing.T` parameter;
   - is not behind a `//go:build` constraint;
-  - cannot skip itself (no `t.Skip*` call);
+  - cannot skip itself (no `t.Skip*` call, directly or in a helper it calls);
   - can fail: a `t.Error*`, `t.Fatal*` or `t.Fail*` call, a testify `assert`/`require` call, or a call to a helper in the package's test files that does one of these.
 
 `features.json`:

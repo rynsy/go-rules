@@ -135,10 +135,10 @@ func ProofProblem(root, proof string) string {
 	if constrained := pkg.constrained[fn]; constrained != "" {
 		return fmt.Sprintf("%s: the test file has a build constraint (%s), so `go test` skips it", proof, constrained)
 	}
-	if skips(fn) {
-		return proof + ": the test can skip itself, so it proves nothing"
+	if pkg.reaches(fn, isSkip, map[*ast.FuncDecl]bool{}) {
+		return proof + ": the test can skip itself (directly or through a helper), so it proves nothing"
 	}
-	if !pkg.asserts(fn, map[*ast.FuncDecl]bool{}) {
+	if !pkg.reaches(fn, isFailure, map[*ast.FuncDecl]bool{}) {
 		return proof + ": the test cannot fail (no t.Error, t.Fatal or t.Fail, directly or through a helper), so it proves nothing"
 	}
 	return ""
@@ -212,21 +212,18 @@ func calledName(call *ast.CallExpr) (receiver, name string) {
 	return "", ""
 }
 
-func skips(fn *ast.FuncDecl) bool {
-	found := false
-	ast.Inspect(fn, func(n ast.Node) bool {
-		if call, ok := n.(*ast.CallExpr); ok {
-			receiver, name := calledName(call)
-			found = found || (receiver != "" && strings.HasPrefix(name, "Skip"))
-		}
-		return !found
-	})
-	return found
+func isSkip(receiver, name string) bool {
+	return receiver != "" && strings.HasPrefix(name, "Skip")
 }
 
 var failing = []string{"Error", "Errorf", "Fatal", "Fatalf", "Fail", "FailNow"}
 
-func (pkg testPackage) asserts(fn *ast.FuncDecl, seen map[*ast.FuncDecl]bool) bool {
+func isFailure(receiver, name string) bool {
+	return receiver == "assert" || receiver == "require" || (receiver != "" && slices.Contains(failing, name))
+}
+
+// reaches reports whether fn, or a helper in the package's test files that it calls, makes a call matching match.
+func (pkg testPackage) reaches(fn *ast.FuncDecl, match func(receiver, name string) bool, seen map[*ast.FuncDecl]bool) bool {
 	if fn.Body == nil || seen[fn] {
 		return false
 	}
@@ -238,15 +235,10 @@ func (pkg testPackage) asserts(fn *ast.FuncDecl, seen map[*ast.FuncDecl]bool) bo
 			return !found
 		}
 		receiver, name := calledName(call)
-		switch {
-		case receiver == "assert" || receiver == "require":
+		if match(receiver, name) {
 			found = true
-		case receiver != "" && slices.Contains(failing, name):
-			found = true
-		case receiver == "":
-			if helper, ok := pkg.funcs[name]; ok {
-				found = pkg.asserts(helper, seen)
-			}
+		} else if helper, ok := pkg.funcs[name]; ok && receiver == "" {
+			found = pkg.reaches(helper, match, seen)
 		}
 		return !found
 	})
