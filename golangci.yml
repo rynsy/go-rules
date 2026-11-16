@@ -1,0 +1,43 @@
+version: "2"
+
+run:
+  relative-path-mode: gitroot
+
+linters:
+  default: standard
+  enable:
+    - forbidigo
+    - gocognit
+    - gocyclo
+    - gosec
+    - misspell
+    - nolintlint
+    - revive
+    - unparam
+  settings:
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^time\.(Now|Since|Until)$
+          msg: inject a clock (a func() time.Time) from cmd/<name>/main.go, the composition root
+        - pattern: ^time\.Sleep$
+          msg: a sleep hides a race; wait on the event or a context, or use the retry policy. Tests may sleep
+    gocognit:
+      min-complexity: 15
+    gocyclo:
+      min-complexity: 12
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+  exclusions:
+    presets: [comments]
+    rules:
+      - path: _test\.go
+        linters: [forbidigo, gocognit, gocyclo, gosec]
+      - path: ^cmd/[^/]+/main\.go$
+        linters: [forbidigo]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
