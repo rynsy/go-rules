@@ -102,9 +102,10 @@ func F() {}
 			"package x\n\nfunc F() {\n\t//nolintbecause reasons\n\t//go:prose here\n\t//line prose\n\t//export two words\n}\n",
 			[]int{4, 5, 6, 7},
 		},
-		"real directives inside a body":  {"package x\n\nfunc F() {\n\t//line x.go:10\n\t_ = 1\n}\n", nil},
-		"nolint with a reason":           {"package x\n\nvar V = 1 //nolint:gosec,revive // G1: why\n", nil},
-		"nolint for forbidigo is RYG002": {"package x\n\nvar V = 1 //nolint:gosec,forbidigo // why\n", []int{3}},
+		"real directives inside a body":         {"package x\n\nfunc F() {\n\t//line x.go:10\n\t_ = 1\n}\n", nil},
+		"nolint with a reason":                  {"package x\n\nvar V = 1 //nolint:gosec,revive // G1: why\n", nil},
+		"nolint for forbidigo is RYG002":        {"package x\n\nvar V = 1 //nolint:gosec,forbidigo // why\n", []int{3}},
+		"nolint for forbidigo as a doc comment": {"package x\n\n//nolint:forbidigo //the clock\nvar V = 1\n", []int{3}},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -55,6 +55,19 @@ func TestSkips(t *testing.T) {
 
 func TestSkipNow(t *testing.T) { t.SkipNow(); t.Fatal("x") }
 
+func TestEmptySub(t *testing.T) {
+	t.Run("empty case", func(t *testing.T) {})
+	t.Run("real", func(t *testing.T) {
+		t.Run("inner", func(t *testing.T) { t.Error("x") })
+	})
+	t.Fatal("the parent can fail")
+}
+
+func TestSkippingSub(t *testing.T) {
+	t.Run("skips", func(t *testing.T) { t.Skip("later"); t.Fatal("x") })
+	t.Fatal("x")
+}
+
 func notATest(t *testing.T) { t.Fatal("x") }
 
 func TestSkipsInSetup(t *testing.T) { setup(t); t.Fatal("x") }
@@ -111,6 +124,7 @@ func repo(t *testing.T, features string) string {
 const runnableTests = `package api
 
 import (
+	"fmt"
 	"os"
 	"testing"
 )
@@ -130,6 +144,13 @@ func TestSubtests(t *testing.T) {
 }
 
 func TestFails(t *testing.T) {
+	if os.Getenv("FX_PASS") == "" {
+		t.Fatal("fails")
+	}
+}
+
+func TestSpoofsAPass(t *testing.T) {
+	fmt.Print("\x16--- PASS: TestSpoofsAPass (0.00s)\n")
 	if os.Getenv("FX_PASS") == "" {
 		t.Fatal("fails")
 	}
@@ -208,13 +229,15 @@ func TestFeatureMapHolds(t *testing.T) {
 func TestProofsMustPassWhenRun(t *testing.T) {
 	root := runnable(t, openapiDoc, `[
 	  {"name": "Health", "operations": ["health", "createItem"], "provenBy": [
-	    "internal/api:TestFails", "internal/api:TestSubtests/no such", "internal/other:TestHidden", "internal/broken:TestBroken"
+	    "internal/api:TestFails", "internal/api:TestSubtests/no such", "internal/api:TestSpoofsAPass",
+	    "internal/other:TestHidden", "internal/broken:TestBroken"
 	  ]}
 	]`)
 	got := strings.Join(problems(t, root), "\n")
 	for _, want := range []string{
 		"internal/api:TestFails: did not pass when run",
-		"internal/api:TestSubtests/no such: did not pass when run",
+		"internal/api:TestSubtests/no such: no t.Run with that literal subtest name",
+		"internal/api:TestSpoofsAPass: did not pass when run",
 		"internal/other:TestHidden: did not pass when run",
 		"internal/broken:TestBroken: did not pass when run (`go test -run` in internal/broken): it did not build",
 	} {
@@ -252,25 +275,29 @@ func TestFeatureMapGaps(t *testing.T) {
 func TestProofProblems(t *testing.T) {
 	root := repo(t, `[]`)
 	cases := map[string]string{
-		"internal/api:TestHealth":          "",
-		"internal/api:TestViaHelper":       "",
-		"internal/api:TestSubtests/a":      "",
-		"internal/api:TestTestify":         "",
-		"internal/api:TestNothing":         "cannot fail",
-		"internal/api:TestRecursiveHelper": "cannot fail",
-		"internal/api:TestSkips":           "can skip itself",
-		"internal/api:TestSkipNow":         "can skip itself",
-		"internal/api:TestSkipsInSetup":    "through a helper",
-		"internal/api:TestTagged":          "build constraint (integration)",
-		"internal/api:TestMissing":         "no such test function",
-		"internal/api:TestLogsAnError":     "cannot fail",
-		"internal/api:TestLocalAssert":     "cannot fail",
-		"internal/api:notATest":            "not a proof of the form",
-		"internal/api:TestBench":           "no such test function",
-		"internal/none:TestHealth":         "no _test.go files",
-		"TestHealth":                       "not a proof of the form",
-		"../x:TestHealth":                  "not a proof of the form",
-		"/abs:TestHealth":                  "not a proof of the form",
+		"internal/api:TestHealth":              "",
+		"internal/api:TestViaHelper":           "",
+		"internal/api:TestSubtests/a":          "",
+		"internal/api:TestTestify":             "",
+		"internal/api:TestNothing":             "cannot fail",
+		"internal/api:TestRecursiveHelper":     "cannot fail",
+		"internal/api:TestSkips":               "can skip itself",
+		"internal/api:TestSkipNow":             "can skip itself",
+		"internal/api:TestEmptySub/empty_case": "cannot fail",
+		"internal/api:TestSkippingSub/skips":   "can skip itself",
+		"internal/api:TestEmptySub/real/inner": "",
+		"internal/api:TestEmptySub/real/none":  "no t.Run with that literal subtest name",
+		"internal/api:TestSkipsInSetup":        "through a helper",
+		"internal/api:TestTagged":              "build constraint (integration)",
+		"internal/api:TestMissing":             "no such test function",
+		"internal/api:TestLogsAnError":         "cannot fail",
+		"internal/api:TestLocalAssert":         "cannot fail",
+		"internal/api:notATest":                "not a proof of the form",
+		"internal/api:TestBench":               "no such test function",
+		"internal/none:TestHealth":             "no _test.go files",
+		"TestHealth":                           "not a proof of the form",
+		"../x:TestHealth":                      "not a proof of the form",
+		"/abs:TestHealth":                      "not a proof of the form",
 	}
 	for proof, want := range cases {
 		t.Run(proof, func(t *testing.T) {

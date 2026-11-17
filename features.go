@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -141,9 +142,8 @@ func featureProblems(root, openapi string, f Feature, ops map[string]string) (pr
 // ProofProblem checks one proof, written "<package dir>:<TestName>" (a subtest may follow a "/").
 // It returns "" when the test exists, always runs, and can fail.
 func ProofProblem(root, proof string) string {
-	dir, name, ok := strings.Cut(proof, ":")
-	name, _, _ = strings.Cut(name, "/")
-	if !ok || !strings.HasPrefix(name, "Test") || filepath.IsAbs(dir) || strings.Contains(dir, "..") {
+	dir, name, sub, ok := parseProof(proof)
+	if !ok {
 		return proof + ": not a proof of the form <package dir>:<TestName> (internal/api:TestHealth)"
 	}
 	pkg, err := loadTests(filepath.Join(root, dir))
@@ -160,10 +160,61 @@ func ProofProblem(root, proof string) string {
 	if pkg.reaches(fn, isSkip, map[*ast.FuncDecl]bool{}) {
 		return proof + ": the test can skip itself (directly or through a helper), so it proves nothing"
 	}
+	if sub != "" {
+		if fn = pkg.subtest(fn, sub); fn == nil {
+			return proof + ": no t.Run with that literal subtest name in " + name
+		}
+	}
 	if !pkg.reaches(fn, isFailure, map[*ast.FuncDecl]bool{}) {
 		return proof + ": the test cannot fail (no t.Error, t.Fatal or t.Fail on a *testing.T, and no testify call, directly or through a helper), so it proves nothing"
 	}
 	return ""
+}
+
+// subtest finds the function literal passed to t.Run under each "/"-separated name in path, and
+// returns it as a function the checks can walk; nil when a level has no t.Run with that literal name.
+func (pkg testPackage) subtest(fn *ast.FuncDecl, path string) *ast.FuncDecl {
+	for name := range strings.SplitSeq(path, "/") {
+		vars := testingVars(fn)
+		var found *ast.FuncLit
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			if call, ok := n.(*ast.CallExpr); ok && found == nil {
+				found = runBody(call, vars, name)
+			}
+			return found == nil
+		})
+		if found == nil {
+			return nil
+		}
+		sub := &ast.FuncDecl{Name: fn.Name, Type: found.Type, Body: found.Body}
+		pkg.testify[sub] = pkg.testify[fn]
+		fn = sub
+	}
+	return fn
+}
+
+// runBody is the function literal of call when call is t.Run("<name>", func...) on a testing variable.
+func runBody(call *ast.CallExpr, vars map[string]bool, name string) *ast.FuncLit {
+	receiver, method := calledName(call)
+	if method != "Run" || !vars[receiver] || len(call.Args) != 2 {
+		return nil
+	}
+	lit, isLit := call.Args[0].(*ast.BasicLit)
+	body, isFunc := call.Args[1].(*ast.FuncLit)
+	if !isLit || !isFunc || lit.Kind != token.STRING {
+		return nil
+	}
+	text, err := strconv.Unquote(lit.Value)
+	if err != nil || strings.ReplaceAll(text, " ", "_") != strings.ReplaceAll(name, " ", "_") {
+		return nil
+	}
+	return body
+}
+
+func parseProof(proof string) (dir, name, sub string, ok bool) {
+	dir, name, ok = strings.Cut(proof, ":")
+	name, sub, _ = strings.Cut(name, "/")
+	return dir, name, sub, ok && strings.HasPrefix(name, "Test") && !filepath.IsAbs(dir) && !strings.Contains(dir, "..")
 }
 
 type testPackage struct {
