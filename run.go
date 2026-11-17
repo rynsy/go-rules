@@ -65,8 +65,8 @@ func runDir(root, dir string, proofs []string) (map[string]bool, string, error) 
 	//nolint:gosec // G204: go itself; the arguments are the repo's own package dir and test names
 	cmd := exec.Command("go", "test", "-json", "-count=1", "-run", "^("+strings.Join(tops, "|")+")$", "./"+filepath.ToSlash(dir))
 	cmd.Dir = root
-	out, _ := cmd.Output()
-	passed := map[string]bool{}
+	out, runErr := cmd.Output()
+	passed, failed := map[string]bool{}, map[string]bool{}
 	var buildOutput strings.Builder
 	scanner := bufio.NewScanner(bytes.NewReader(out))
 	scanner.Buffer(make([]byte, 1024*1024), 16*1024*1024)
@@ -78,6 +78,8 @@ func runDir(root, dir string, proofs []string) (map[string]bool, string, error) 
 		switch event.Action {
 		case "pass":
 			passed[event.Package+" "+event.Test] = true
+		case "fail":
+			failed[event.Package+" "+event.Test] = true
 		case "build-output":
 			buildOutput.WriteString(event.Output)
 		}
@@ -87,6 +89,12 @@ func runDir(root, dir string, proofs []string) (map[string]bool, string, error) 
 	}
 	if buildOutput.Len() > 0 {
 		return passed, ": it did not build:\n" + buildOutput.String(), nil
+	}
+	if runErr != nil {
+		return map[string]bool{}, ": go test failed for the package's proofs (" + runErr.Error() + ")", nil
+	}
+	for key := range failed {
+		delete(passed, key)
 	}
 	return passed, "", nil
 }

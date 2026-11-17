@@ -7,7 +7,7 @@ The idea: whenever an agent (or a person) gets something wrong, the correction b
 ## Use it
 
 ```sh
-go get -tool github.com/rynsy/go-rules/cmd/rynsy-rules@v0.3.0
+go get -tool github.com/rynsy/go-rules/cmd/rynsy-rules@v0.4.0
 echo .golangci.rynsy.yml >> .gitignore
 ```
 
@@ -56,6 +56,8 @@ The repo keeps no `.golangci.yml` of its own. A one-off exception is `//nolint:<
   - **passes when run**: `features` runs the proofs with `go test -json -run` (one run per package directory, in the caller's environment) and requires a `pass` event for exactly that package and test or subtest (spaces become `_`). A `TestMain` that exits early, a `_windows_test.go` file, a `testdata/` directory, a skip by any route and a phantom subtest name all fail here.
 
 Every OpenAPI `operationId` must be unique.
+
+A subtest proof (`TestX/sub`) must name a `t.Run` with that literal name, and its function literal must be able to fail. When any proof in a package fails or `go test` exits non-zero, every proof in that package fails. A skip anywhere in a test, subtests included, disqualifies the whole test.
 
 Known ceilings of the static part (each needs deliberate effort, and the run check does not catch them because the test does pass): an assertion in dead code (`if false { t.Fatal() }`), a helper that shares a name with one in the other test package or build-tagged file, a closure that shadows a helper, and an early `return` before the assertions. Fixing these needs go/types; add it when one shows up in a real PR.
 

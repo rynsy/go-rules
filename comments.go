@@ -26,8 +26,9 @@ var (
 	directive    = regexp.MustCompile(`^(//go:(build|generate|embed|noinline|nosplit|linkname|noescape|norace|nocheckptr|uintptrescapes|wasmimport|wasmexport|debug|fix) ` +
 		`|//go:(noinline|nosplit|noescape|norace|nocheckptr|uintptrescapes)$` +
 		`|//line \S+:\d+(:\d+)?$|/\*line \S+:\d+(:\d+)?\*/$|//export \w+$|// \+build )`)
-	nolint     = regexp.MustCompile(`^//nolint:([\w-]+(,[\w-]+)*)( // \S.*)?$`)
-	exampleOut = regexp.MustCompile(`^//\s*(Unordered output|Output):`)
+	nolintForbidigo = regexp.MustCompile(`(?i)^//\s*nolint:[^/]*forbidigo`)
+	nolint          = regexp.MustCompile(`^//nolint:([\w-]+(,[\w-]+)*)( // \S.*)?$`)
+	exampleOut      = regexp.MustCompile(`^//\s*(Unordered output|Output):`)
 )
 
 // CheckSource returns the RYG001 findings in one Go file.
@@ -50,7 +51,7 @@ func CheckSource(path string, src []byte) ([]Finding, error) {
 	}
 	for _, group := range file.Comments {
 		for _, c := range group.List {
-			if m := nolint.FindStringSubmatch(c.Text); m != nil && slices.Contains(strings.Split(m[1], ","), "forbidigo") {
+			if nolintForbidigo.MatchString(c.Text) {
 				pos := fset.Position(c.Pos())
 				findings = append(findings, Finding{path, pos.Line, pos.Column, "RYG002", NolintBanMsg})
 			}
