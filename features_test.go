@@ -208,7 +208,7 @@ func runnable(t *testing.T, openapi, features string) string {
 
 func problems(t *testing.T, root string) []string {
 	t.Helper()
-	got, err := FeatureProblems(root, filepath.Join(root, "internal/api/openapi.json"), filepath.Join(root, "features.json"))
+	got, err := FeatureProblems(root, "internal/api/openapi.json", "features.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,10 +311,44 @@ func TestProofProblems(t *testing.T) {
 
 func TestFeatureFilesMustParse(t *testing.T) {
 	root := repo(t, `{not json`)
-	if _, err := FeatureProblems(root, filepath.Join(root, "internal/api/openapi.json"), filepath.Join(root, "features.json")); err == nil {
+	if _, err := FeatureProblems(root, "internal/api/openapi.json", "features.json"); err == nil {
 		t.Error("a broken features.json must be an error")
 	}
-	if _, _, err := Operations(filepath.Join(root, "features.json")); err == nil {
+	if _, _, err := Operations(root, "features.json"); err == nil {
 		t.Error("a broken openapi.json must be an error")
+	}
+}
+
+func TestFilesOutsideTheRepoAreNotRead(t *testing.T) {
+	root := runnable(t, `{"paths":{}}`, `[]`)
+	outside := t.TempDir()
+	for name, body := range map[string]string{"openapi.json": `{"paths":{}}`, "features.json": `[]`} {
+		if err := os.WriteFile(filepath.Join(outside, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(filepath.Join(outside, name), filepath.Join(root, "link-"+name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	up, err := filepath.Rel(root, outside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{up, outside} {
+		if _, _, err := Operations(root, filepath.Join(dir, "openapi.json")); err == nil {
+			t.Errorf("openapi in %s is outside the repo, so reading it must be an error", dir)
+		}
+		if _, err := FeatureProblems(root, "internal/api/openapi.json", filepath.Join(dir, "features.json")); err == nil {
+			t.Errorf("features in %s is outside the repo, so reading it must be an error", dir)
+		}
+	}
+	if _, _, err := Operations(root, "link-openapi.json"); err == nil {
+		t.Error("a symlink that leaves the repo must not be followed")
+	}
+	if _, err := FeatureProblems(root, "internal/api/openapi.json", "link-features.json"); err == nil {
+		t.Error("a symlink that leaves the repo must not be followed")
+	}
+	if got, err := FeatureProblems(root, "internal/api/openapi.json", "features.json"); err != nil || len(got) != 0 {
+		t.Errorf("files inside the repo must be read: %v %v", got, err)
 	}
 }
