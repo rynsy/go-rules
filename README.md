@@ -57,7 +57,7 @@ The repo keeps no `.golangci.yml` of its own. A one-off exception is `//nolint:<
 
 Every OpenAPI `operationId` must be unique.
 
-Every file is read through an `os.Root` opened on the repo: `-openapi` and `-features` are paths inside the repo, and a path that leaves it (`..`, an absolute path, a symlink out) is an error, in `check` too.
+The OpenAPI document, the feature map, `go.mod` and the `.go` files `check` lints are read through an `os.Root` opened on the repo. `-openapi` and `-features` are relative paths inside the repo; `..`, an absolute path, or a symlink with an absolute target or a target outside the repo is an error (exit 2), even when an absolute path resolves inside the repo. The proving `_test.go` files are not read this way.
 
 A subtest proof (`TestX/sub`) must name a `t.Run` with that literal name, and its function literal must be able to fail. When any proof in a package fails or `go test` exits non-zero, every proof in that package fails. A skip anywhere in a test, subtests included, disqualifies the whole test.
 

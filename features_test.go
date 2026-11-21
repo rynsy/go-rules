@@ -352,3 +352,17 @@ func TestFilesOutsideTheRepoAreNotRead(t *testing.T) {
 		t.Errorf("files inside the repo must be read: %v %v", got, err)
 	}
 }
+
+func TestGoModOutsideTheRepoIsNotRead(t *testing.T) {
+	root := runnable(t, `{"paths":{}}`, `[]`)
+	outside := filepath.Join(t.TempDir(), "go.mod")
+	if err := os.Rename(filepath.Join(root, "go.mod"), outside); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "go.mod")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RunProofs(root, []string{"internal/api:TestHealth"}); err == nil {
+		t.Error("go.mod is a symlink that leaves the repo, so reading it must be an error")
+	}
+}
