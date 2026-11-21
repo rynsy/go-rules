@@ -71,7 +71,7 @@ func check() ([]string, error) {
 		if path == "" {
 			continue
 		}
-		src, err := os.ReadFile(path) //nolint:gosec // G304: paths come from git ls-files in the repo
+		src, err := rules.ReadFile(".", path)
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}

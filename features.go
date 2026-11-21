@@ -22,10 +22,21 @@ type Feature struct {
 
 var httpMethods = []string{"get", "put", "post", "delete", "options", "head", "patch", "trace"}
 
-// Operations reads an OpenAPI document: operationId to "METHOD /path", and the problems in it
-// (an operation with no id, or an id used twice).
-func Operations(openapi string) (map[string]string, []string, error) {
-	raw, err := os.ReadFile(openapi) //nolint:gosec // G304: the path is a CLI argument from the repo's Makefile
+// ReadFile reads name, a path relative to root. A path that leaves root, directly or through a
+// symlink, is an error.
+func ReadFile(root, name string) ([]byte, error) {
+	dir, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = dir.Close() }()
+	return dir.ReadFile(name)
+}
+
+// Operations reads the OpenAPI document at openapi, a path relative to root: operationId to
+// "METHOD /path", and the problems in it (an operation with no id, or an id used twice).
+func Operations(root, openapi string) (map[string]string, []string, error) {
+	raw, err := ReadFile(root, openapi)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -64,13 +75,14 @@ func Operations(openapi string) (map[string]string, []string, error) {
 	return named, problems, nil
 }
 
-// FeatureProblems lists everything wrong with the feature map; empty means it holds.
+// FeatureProblems lists everything wrong with the feature map; empty means it holds. openapi and
+// featuresPath are relative to root.
 func FeatureProblems(root, openapi, featuresPath string) ([]string, error) {
-	ops, problems, err := Operations(openapi)
+	ops, problems, err := Operations(root, openapi)
 	if err != nil {
 		return nil, err
 	}
-	raw, err := os.ReadFile(featuresPath) //nolint:gosec // G304: the path is a CLI argument from the repo's Makefile
+	raw, err := ReadFile(root, featuresPath)
 	if err != nil {
 		return nil, err
 	}
