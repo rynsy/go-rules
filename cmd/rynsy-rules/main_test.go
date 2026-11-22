@@ -97,3 +97,17 @@ func TestUsage(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckDoesNotFollowASymlinkOutOfTheRepo(t *testing.T) {
+	outside := filepath.Join(t.TempDir(), "o.go")
+	if err := os.WriteFile(outside, []byte("package o\n\nvar V = 1 // why\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	inRepo(t, map[string]string{"ok.go": "// Package a is a.\npackage a\n"})
+	if err := os.Symlink(outside, "link.go"); err != nil {
+		t.Fatal(err)
+	}
+	if code, out := runCLI("check"); code != 2 || !strings.Contains(out, "link.go") || strings.Contains(out, "RYG001") {
+		t.Errorf("exit %d: %s", code, out)
+	}
+}

@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
@@ -24,7 +23,7 @@ func RunProofs(root string, proofs []string) (map[string]string, error) {
 	if len(proofs) == 0 {
 		return failed, nil
 	}
-	gomod, err := os.ReadFile(filepath.Join(root, "go.mod")) //nolint:gosec // G304: the repo's own go.mod
+	gomod, err := ReadFile(root, "go.mod")
 	if err != nil {
 		return nil, err
 	}
